@@ -1,6 +1,6 @@
 import { EventEmitter } from "@billjs/event-emitter";
 
-export type SubscriptionHandler = (newValue: string) => void;
+export type SubscriptionHandler = (newValue: string, key: string) => void;
 
 interface kvError {
   ok: false;
@@ -15,11 +15,11 @@ interface kvPush {
   new_value: string;
 }
 
-interface kvGenericResponse {
+interface kvGenericResponse<T> {
   ok: true;
   type: "response";
   request_id: string;
-  data: string;
+  data: T;
 }
 
 interface kvEmptyResponse {
@@ -34,21 +34,52 @@ interface kvGet {
   data: { key: string };
 }
 
+interface kvGetBulk {
+  command: "kget-bulk";
+  request_id: string;
+  data: { keys: string[] };
+}
+
+interface kvGetAll {
+  command: "kget-all";
+  request_id: string;
+  data: { prefix: string };
+}
+
 interface kvSet {
   command: "kset";
   request_id: string;
   data: { key: string; data: string };
 }
-interface kvSubscribe {
+
+interface kvSetBulk {
+  command: "kset-bulk";
+  request_id: string;
+  data: Record<string, string>;
+}
+
+interface kvSubscribeKey {
   command: "ksub";
   request_id: string;
   data: { key: string };
 }
 
-interface kvUnsubscribe {
+interface kvUnsubscribeKey {
   command: "kunsub";
   request_id: string;
   data: { key: string };
+}
+
+interface kvSubscribePrefix {
+  command: "ksub-prefix";
+  request_id: string;
+  data: { prefix: string };
+}
+
+interface kvUnsubscribePrefix {
+  command: "kunsub-prefix";
+  request_id: string;
+  data: { prefix: string };
 }
 
 interface kvVersion {
@@ -58,12 +89,20 @@ interface kvVersion {
 
 export type KilovoltRequest =
   | kvGet
+  | kvGetBulk
+  | kvGetAll
   | kvSet
-  | kvSubscribe
-  | kvUnsubscribe
+  | kvSetBulk
+  | kvSubscribeKey
+  | kvUnsubscribeKey
+  | kvSubscribePrefix
+  | kvUnsubscribePrefix
   | kvVersion;
 
-type KilovoltResponse = kvGenericResponse | kvEmptyResponse;
+type KilovoltResponse =
+  | kvGenericResponse<string>
+  | kvGenericResponse<Record<string, string>>
+  | kvEmptyResponse;
 
 export type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 
@@ -72,13 +111,14 @@ function generateRid() {
 }
 
 export default class KilovoltWS extends EventEmitter {
-  socket!: WebSocket;
+  private socket!: WebSocket;
 
-  address: string;
+  private address: string;
 
-  pending: Record<string, (response: KilovoltMessage) => void>;
+  private pending: Record<string, (response: KilovoltMessage) => void>;
 
-  subscriptions: Record<string, SubscriptionHandler[]>;
+  private keySubscriptions: Record<string, SubscriptionHandler[]>;
+  private prefixSubscriptions: Record<string, SubscriptionHandler[]>;
 
   /**
    * Create a new Kilovolt client instance and connect to it
@@ -88,7 +128,8 @@ export default class KilovoltWS extends EventEmitter {
     super();
     this.address = address;
     this.pending = {};
-    this.subscriptions = {};
+    this.keySubscriptions = {};
+    this.prefixSubscriptions = {};
     this.connect(address);
   }
 
@@ -156,16 +197,16 @@ export default class KilovoltWS extends EventEmitter {
           }
           break;
         case "push": {
-          if (response.key in this.subscriptions) {
-            this.subscriptions[response.key].forEach((fn) =>
-              fn(response.new_value)
-            );
-          } else {
-            console.warn(
-              "Received subscription push with no listeners: ",
-              response
+          if (response.key in this.keySubscriptions) {
+            this.keySubscriptions[response.key].forEach((fn) =>
+              fn(response.new_value, response.key)
             );
           }
+          Object.entries(this.prefixSubscriptions)
+            .filter(([k]) => response.key.startsWith(k))
+            .forEach(([_, subscribers]) => {
+              subscribers.forEach((fn) => fn(response.new_value, response.key));
+            });
           break;
         }
         default:
@@ -205,6 +246,19 @@ export default class KilovoltWS extends EventEmitter {
   }
 
   /**
+   * Set multiple keys at once
+   * @param data Map of key:value data to set
+   * @returns Reply from server
+   */
+  async putKeys(data: Record<string, string>): Promise<KilovoltMessage> {
+    return this.send({
+      command: "kset-bulk",
+      request_id: generateRid(),
+      data,
+    });
+  }
+
+  /**
    * Set a key to the JSON representation of an object
    * @param key Key to set
    * @param data Object to save
@@ -222,6 +276,23 @@ export default class KilovoltWS extends EventEmitter {
   }
 
   /**
+   * Set multiple keys at once
+   * @param data Map of key:value data to set
+   * @returns Reply from server
+   */
+  async putJSONs(data: Record<string, unknown>): Promise<KilovoltMessage> {
+    const jsonData: Record<string, string> = {};
+    Object.entries(data).forEach(([k, v]) => {
+      jsonData[k] = JSON.stringify(v);
+    });
+    return this.send({
+      command: "kset-bulk",
+      request_id: generateRid(),
+      data: jsonData,
+    });
+  }
+
+  /**
    * Retrieve value for key
    * @param key Key to retrieve
    * @returns Reply from server
@@ -233,7 +304,26 @@ export default class KilovoltWS extends EventEmitter {
       data: {
         key,
       },
-    })) as kvError | kvGenericResponse;
+    })) as kvError | kvGenericResponse<string>;
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
+    return response.data;
+  }
+
+  /**
+   * Retrieve value for key
+   * @param key Key to retrieve
+   * @returns Reply from server
+   */
+  async getKeys(keys: string[]): Promise<Record<string, string>> {
+    const response = (await this.send({
+      command: "kget-bulk",
+      request_id: generateRid(),
+      data: {
+        keys,
+      },
+    })) as kvError | kvGenericResponse<Record<string, string>>;
     if ("error" in response) {
       throw new Error(response.error);
     }
@@ -253,11 +343,35 @@ export default class KilovoltWS extends EventEmitter {
       data: {
         key,
       },
-    })) as kvError | kvGenericResponse;
+    })) as kvError | kvGenericResponse<string>;
     if ("error" in response) {
       throw new Error(response.error);
     }
     return JSON.parse(response.data);
+  }
+
+  /**
+   * Retrieve objects from keys, deserialized from JSON.
+   * It's your responsibility to make sure the object is actually what you expect
+   * @param key Key to retrieve
+   * @returns Reply from server
+   */
+  async getJSONs<T>(keys: string[]): Promise<T> {
+    const response = (await this.send({
+      command: "kget-bulk",
+      request_id: generateRid(),
+      data: {
+        keys,
+      },
+    })) as kvError | kvGenericResponse<Record<string, string>>;
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
+    const returnData: Record<string, unknown> = {};
+    Object.entries(response.data).forEach(([k, v]) => {
+      returnData[k] = JSON.parse(v);
+    });
+    return returnData as T;
   }
 
   /**
@@ -266,14 +380,14 @@ export default class KilovoltWS extends EventEmitter {
    * @param fn Callback to call when key changes
    * @returns Reply from server
    */
-  async subscribe(
+  async subscribeKey(
     key: string,
     fn: SubscriptionHandler
   ): Promise<KilovoltMessage> {
-    if (key in this.subscriptions) {
-      this.subscriptions[key].push(fn);
+    if (key in this.keySubscriptions) {
+      this.keySubscriptions[key].push(fn);
     } else {
-      this.subscriptions[key] = [fn];
+      this.keySubscriptions[key] = [fn];
     }
 
     return this.send({
@@ -292,8 +406,8 @@ export default class KilovoltWS extends EventEmitter {
    * @param fn Callback to stop calling
    * @returns true if a subscription was removed, false otherwise
    */
-  async unsubscribe(key: string, fn: SubscriptionHandler): Promise<boolean> {
-    if (!(key in this.subscriptions)) {
+  async unsubscribeKey(key: string, fn: SubscriptionHandler): Promise<boolean> {
+    if (!(key in this.keySubscriptions)) {
       // No subscriptions, just warn and return
       console.warn(
         `Trying to unsubscribe from key "${key}" but no subscriptions could be found!`
@@ -302,7 +416,7 @@ export default class KilovoltWS extends EventEmitter {
     }
 
     // Get subscriber in list
-    const index = this.subscriptions[key].findIndex((subfn) => subfn === fn);
+    const index = this.keySubscriptions[key].findIndex((subfn) => subfn === fn);
     if (index < 0) {
       // No subscriptions, just warn and return
       console.warn(
@@ -312,10 +426,10 @@ export default class KilovoltWS extends EventEmitter {
     }
 
     // Remove subscriber from list
-    this.subscriptions[key].splice(index, 1);
+    this.keySubscriptions[key].splice(index, 1);
 
     // Check if array is empty
-    if (this.subscriptions[key].length < 1) {
+    if (this.keySubscriptions[key].length < 1) {
       // Send unsubscribe
       const res = (await this.send({
         command: "kunsub",
@@ -323,7 +437,85 @@ export default class KilovoltWS extends EventEmitter {
         data: {
           key,
         },
-      })) as kvError | kvGenericResponse;
+      })) as kvError | kvGenericResponse<void>;
+      if ("error" in res) {
+        console.warn(`unsubscribe failed: ${res.error}`);
+      }
+      return res.ok;
+    }
+
+    return true;
+  }
+
+  /**
+   * Subscribe to key changes on a prefix
+   * @param prefix Prefix of keys to subscribe to
+   * @param fn Callback to call when key changes
+   * @returns Reply from server
+   */
+  async subscribePrefix(
+    prefix: string,
+    fn: SubscriptionHandler
+  ): Promise<KilovoltMessage> {
+    if (prefix in this.keySubscriptions) {
+      this.prefixSubscriptions[prefix].push(fn);
+    } else {
+      this.prefixSubscriptions[prefix] = [fn];
+    }
+
+    return this.send({
+      command: "ksub-prefix",
+      request_id: generateRid(),
+      data: {
+        prefix,
+      },
+    });
+  }
+
+  /**
+   * Stop calling a callback when their prefix's related key changes
+   * This only
+   * @param prefix Prefix to unsubscribe from
+   * @param fn Callback to stop calling
+   * @returns true if a subscription was removed, false otherwise
+   */
+  async unsubscribePrefix(
+    prefix: string,
+    fn: SubscriptionHandler
+  ): Promise<boolean> {
+    if (!(prefix in this.prefixSubscriptions)) {
+      // No subscriptions, just warn and return
+      console.warn(
+        `Trying to unsubscribe from prefix "${prefix}" but no subscriptions could be found!`
+      );
+      return false;
+    }
+
+    // Get subscriber in list
+    const index = this.prefixSubscriptions[prefix].findIndex(
+      (subfn) => subfn === fn
+    );
+    if (index < 0) {
+      // No subscriptions, just warn and return
+      console.warn(
+        `Trying to unsubscribe from key "${prefix}" but specified function is not in the subscribers!`
+      );
+      return false;
+    }
+
+    // Remove subscriber from list
+    this.prefixSubscriptions[prefix].splice(index, 1);
+
+    // Check if array is empty
+    if (this.prefixSubscriptions[prefix].length < 1) {
+      // Send unsubscribe
+      const res = (await this.send({
+        command: "kunsub-prefix",
+        request_id: generateRid(),
+        data: {
+          prefix,
+        },
+      })) as kvError | kvGenericResponse<void>;
       if ("error" in res) {
         console.warn(`unsubscribe failed: ${res.error}`);
       }

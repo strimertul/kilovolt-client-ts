@@ -313,7 +313,7 @@ export default class KilovoltWS extends EventEmitter {
 
   /**
    * Retrieve value for key
-   * @param key Key to retrieve
+   * @param keys Keys to retrieve
    * @returns Reply from server
    */
   async getKeys(keys: string[]): Promise<Record<string, string>> {
@@ -322,6 +322,25 @@ export default class KilovoltWS extends EventEmitter {
       request_id: generateRid(),
       data: {
         keys,
+      },
+    })) as kvError | kvGenericResponse<Record<string, string>>;
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
+    return response.data;
+  }
+
+  /**
+   * Retrieve all keys with given prefix
+   * @param prefix Prefix for keys to retrieve
+   * @returns Reply from server
+   */
+  async getKeysByPrefix(prefix: string): Promise<Record<string, string>> {
+    const response = (await this.send({
+      command: "kget-all",
+      request_id: generateRid(),
+      data: {
+        prefix,
       },
     })) as kvError | kvGenericResponse<Record<string, string>>;
     if ("error" in response) {

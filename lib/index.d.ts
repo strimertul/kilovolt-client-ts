@@ -153,10 +153,16 @@ export default class KilovoltWS extends EventEmitter {
     getKey(key: string): Promise<string>;
     /**
      * Retrieve value for key
-     * @param key Key to retrieve
+     * @param keys Keys to retrieve
      * @returns Reply from server
      */
     getKeys(keys: string[]): Promise<Record<string, string>>;
+    /**
+     * Retrieve all keys with given prefix
+     * @param prefix Prefix for keys to retrieve
+     * @returns Reply from server
+     */
+    getKeysByPrefix(prefix: string): Promise<Record<string, string>>;
     /**
      * Retrieve object from key, deserialized from JSON.
      * It's your responsibility to make sure the object is actually what you expect

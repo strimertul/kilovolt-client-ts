@@ -1,5 +1,5 @@
 import { EventEmitter } from "@billjs/event-emitter";
-export declare type SubscriptionHandler = (newValue: string) => void;
+export declare type SubscriptionHandler = (newValue: string, key: string) => void;
 interface kvError {
     ok: false;
     error: string;
@@ -10,11 +10,11 @@ interface kvPush {
     key: string;
     new_value: string;
 }
-interface kvGenericResponse {
+interface kvGenericResponse<T> {
     ok: true;
     type: "response";
     request_id: string;
-    data: string;
+    data: T;
 }
 interface kvEmptyResponse {
     ok: true;
@@ -28,6 +28,20 @@ interface kvGet {
         key: string;
     };
 }
+interface kvGetBulk {
+    command: "kget-bulk";
+    request_id: string;
+    data: {
+        keys: string[];
+    };
+}
+interface kvGetAll {
+    command: "kget-all";
+    request_id: string;
+    data: {
+        prefix: string;
+    };
+}
 interface kvSet {
     command: "kset";
     request_id: string;
@@ -36,32 +50,52 @@ interface kvSet {
         data: string;
     };
 }
-interface kvSubscribe {
+interface kvSetBulk {
+    command: "kset-bulk";
+    request_id: string;
+    data: Record<string, string>;
+}
+interface kvSubscribeKey {
     command: "ksub";
     request_id: string;
     data: {
         key: string;
     };
 }
-interface kvUnsubscribe {
+interface kvUnsubscribeKey {
     command: "kunsub";
     request_id: string;
     data: {
         key: string;
     };
 }
+interface kvSubscribePrefix {
+    command: "ksub-prefix";
+    request_id: string;
+    data: {
+        prefix: string;
+    };
+}
+interface kvUnsubscribePrefix {
+    command: "kunsub-prefix";
+    request_id: string;
+    data: {
+        prefix: string;
+    };
+}
 interface kvVersion {
     command: "kversion";
     request_id: string;
 }
-export declare type KilovoltRequest = kvGet | kvSet | kvSubscribe | kvUnsubscribe | kvVersion;
-declare type KilovoltResponse = kvGenericResponse | kvEmptyResponse;
+export declare type KilovoltRequest = kvGet | kvGetBulk | kvGetAll | kvSet | kvSetBulk | kvSubscribeKey | kvUnsubscribeKey | kvSubscribePrefix | kvUnsubscribePrefix | kvVersion;
+declare type KilovoltResponse = kvGenericResponse<string> | kvGenericResponse<Record<string, string>> | kvEmptyResponse;
 export declare type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 export default class KilovoltWS extends EventEmitter {
-    socket: WebSocket;
-    address: string;
-    pending: Record<string, (response: KilovoltMessage) => void>;
-    subscriptions: Record<string, SubscriptionHandler[]>;
+    private socket;
+    private address;
+    private pending;
+    private keySubscriptions;
+    private prefixSubscriptions;
     /**
      * Create a new Kilovolt client instance and connect to it
      * @param address Kilovolt server endpoint (including path)
@@ -93,6 +127,12 @@ export default class KilovoltWS extends EventEmitter {
      */
     putKey(key: string, data: string): Promise<KilovoltMessage>;
     /**
+     * Set multiple keys at once
+     * @param data Map of key:value data to set
+     * @returns Reply from server
+     */
+    putKeys(data: Record<string, string>): Promise<KilovoltMessage>;
+    /**
      * Set a key to the JSON representation of an object
      * @param key Key to set
      * @param data Object to save
@@ -100,11 +140,23 @@ export default class KilovoltWS extends EventEmitter {
      */
     putJSON<T>(key: string, data: T): Promise<KilovoltMessage>;
     /**
+     * Set multiple keys at once
+     * @param data Map of key:value data to set
+     * @returns Reply from server
+     */
+    putJSONs(data: Record<string, unknown>): Promise<KilovoltMessage>;
+    /**
      * Retrieve value for key
      * @param key Key to retrieve
      * @returns Reply from server
      */
     getKey(key: string): Promise<string>;
+    /**
+     * Retrieve value for key
+     * @param key Key to retrieve
+     * @returns Reply from server
+     */
+    getKeys(keys: string[]): Promise<Record<string, string>>;
     /**
      * Retrieve object from key, deserialized from JSON.
      * It's your responsibility to make sure the object is actually what you expect
@@ -113,12 +165,19 @@ export default class KilovoltWS extends EventEmitter {
      */
     getJSON<T>(key: string): Promise<T>;
     /**
+     * Retrieve objects from keys, deserialized from JSON.
+     * It's your responsibility to make sure the object is actually what you expect
+     * @param key Key to retrieve
+     * @returns Reply from server
+     */
+    getJSONs<T>(keys: string[]): Promise<T>;
+    /**
      * Subscribe to key changes
      * @param key Key to subscribe to
      * @param fn Callback to call when key changes
      * @returns Reply from server
      */
-    subscribe(key: string, fn: SubscriptionHandler): Promise<KilovoltMessage>;
+    subscribeKey(key: string, fn: SubscriptionHandler): Promise<KilovoltMessage>;
     /**
      * Stop calling a callback when its related key changes
      * This only
@@ -126,6 +185,21 @@ export default class KilovoltWS extends EventEmitter {
      * @param fn Callback to stop calling
      * @returns true if a subscription was removed, false otherwise
      */
-    unsubscribe(key: string, fn: SubscriptionHandler): Promise<boolean>;
+    unsubscribeKey(key: string, fn: SubscriptionHandler): Promise<boolean>;
+    /**
+     * Subscribe to key changes on a prefix
+     * @param prefix Prefix of keys to subscribe to
+     * @param fn Callback to call when key changes
+     * @returns Reply from server
+     */
+    subscribePrefix(prefix: string, fn: SubscriptionHandler): Promise<KilovoltMessage>;
+    /**
+     * Stop calling a callback when their prefix's related key changes
+     * This only
+     * @param prefix Prefix to unsubscribe from
+     * @param fn Callback to stop calling
+     * @returns true if a subscription was removed, false otherwise
+     */
+    unsubscribePrefix(prefix: string, fn: SubscriptionHandler): Promise<boolean>;
 }
 export {};

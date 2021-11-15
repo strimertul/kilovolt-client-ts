@@ -87,7 +87,14 @@ interface kvVersion {
     command: "kversion";
     request_id: string;
 }
-export declare type KilovoltRequest = kvGet | kvGetBulk | kvGetAll | kvSet | kvSetBulk | kvSubscribeKey | kvUnsubscribeKey | kvSubscribePrefix | kvUnsubscribePrefix | kvVersion;
+interface kvKeyList {
+    command: "klist";
+    request_id: string;
+    data: {
+        prefix?: string;
+    };
+}
+export declare type KilovoltRequest = kvGet | kvGetBulk | kvGetAll | kvSet | kvSetBulk | kvSubscribeKey | kvUnsubscribeKey | kvSubscribePrefix | kvUnsubscribePrefix | kvVersion | kvKeyList;
 declare type KilovoltResponse = kvGenericResponse<string> | kvGenericResponse<Record<string, string>> | kvEmptyResponse;
 export declare type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 export default class KilovoltWS extends EventEmitter {
@@ -207,5 +214,12 @@ export default class KilovoltWS extends EventEmitter {
      * @returns true if a subscription was removed, false otherwise
      */
     unsubscribePrefix(prefix: string, fn: SubscriptionHandler): Promise<boolean>;
+    /**
+     * Returns a list of saved keys with the given prefix.
+     * If no prefix is given then returns all the keys.
+     * @param prefix Optional prefix
+     * @returns List of keys
+     */
+    keyList(prefix?: string): Promise<string[]>;
 }
 export {};

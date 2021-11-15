@@ -87,6 +87,12 @@ interface kvVersion {
   request_id: string;
 }
 
+interface kvKeyList {
+  command: "klist";
+  request_id: string;
+  data: { prefix?: string };
+}
+
 export type KilovoltRequest =
   | kvGet
   | kvGetBulk
@@ -97,7 +103,8 @@ export type KilovoltRequest =
   | kvUnsubscribeKey
   | kvSubscribePrefix
   | kvUnsubscribePrefix
-  | kvVersion;
+  | kvVersion
+  | kvKeyList;
 
 type KilovoltResponse =
   | kvGenericResponse<string>
@@ -542,5 +549,27 @@ export default class KilovoltWS extends EventEmitter {
     }
 
     return true;
+  }
+
+  /**
+   * Returns a list of saved keys with the given prefix.
+   * If no prefix is given then returns all the keys.
+   * @param prefix Optional prefix
+   * @returns List of keys
+   */
+  async keyList(prefix?: string): Promise<string[]> {
+    const response = (await this.send({
+      command: "klist",
+      request_id: generateRid(),
+      data: {
+        prefix: prefix ?? "",
+      },
+    })) as kvError | kvGenericResponse<string[]>;
+
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
+
+    return response.data;
   }
 }

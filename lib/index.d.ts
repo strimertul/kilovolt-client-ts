@@ -1,104 +1,11 @@
 import { EventEmitter } from "@billjs/event-emitter";
+import { kvGet, kvGetBulk, kvGetAll, kvSet, kvSetBulk, kvSubscribeKey, kvUnsubscribeKey, kvSubscribePrefix, kvUnsubscribePrefix, kvVersion, kvKeyList, kvLogin, kvError, kvPush, KilovoltResponse, kvAuth } from "./messages";
 export declare type SubscriptionHandler = (newValue: string, key: string) => void;
-interface kvError {
-    ok: false;
-    error: string;
-    request_id: string;
-}
-interface kvPush {
-    type: "push";
-    key: string;
-    new_value: string;
-}
-interface kvGenericResponse<T> {
-    ok: true;
-    type: "response";
-    request_id: string;
-    data: T;
-}
-interface kvEmptyResponse {
-    ok: true;
-    type: "response";
-    request_id: string;
-}
-interface kvGet {
-    command: "kget";
-    request_id: string;
-    data: {
-        key: string;
-    };
-}
-interface kvGetBulk {
-    command: "kget-bulk";
-    request_id: string;
-    data: {
-        keys: string[];
-    };
-}
-interface kvGetAll {
-    command: "kget-all";
-    request_id: string;
-    data: {
-        prefix: string;
-    };
-}
-interface kvSet {
-    command: "kset";
-    request_id: string;
-    data: {
-        key: string;
-        data: string;
-    };
-}
-interface kvSetBulk {
-    command: "kset-bulk";
-    request_id: string;
-    data: Record<string, string>;
-}
-interface kvSubscribeKey {
-    command: "ksub";
-    request_id: string;
-    data: {
-        key: string;
-    };
-}
-interface kvUnsubscribeKey {
-    command: "kunsub";
-    request_id: string;
-    data: {
-        key: string;
-    };
-}
-interface kvSubscribePrefix {
-    command: "ksub-prefix";
-    request_id: string;
-    data: {
-        prefix: string;
-    };
-}
-interface kvUnsubscribePrefix {
-    command: "kunsub-prefix";
-    request_id: string;
-    data: {
-        prefix: string;
-    };
-}
-interface kvVersion {
-    command: "kversion";
-    request_id: string;
-}
-interface kvKeyList {
-    command: "klist";
-    request_id: string;
-    data: {
-        prefix?: string;
-    };
-}
-export declare type KilovoltRequest = kvGet | kvGetBulk | kvGetAll | kvSet | kvSetBulk | kvSubscribeKey | kvUnsubscribeKey | kvSubscribePrefix | kvUnsubscribePrefix | kvVersion | kvKeyList;
-declare type KilovoltResponse = kvGenericResponse<string> | kvGenericResponse<Record<string, string>> | kvEmptyResponse;
+export declare type KilovoltRequest = kvGet | kvGetBulk | kvGetAll | kvSet | kvSetBulk | kvSubscribeKey | kvUnsubscribeKey | kvSubscribePrefix | kvUnsubscribePrefix | kvVersion | kvKeyList | kvLogin | kvAuth;
 export declare type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 export default class KilovoltWS extends EventEmitter {
     private socket;
+    private password?;
     private address;
     private pending;
     private keySubscriptions;
@@ -107,7 +14,7 @@ export default class KilovoltWS extends EventEmitter {
      * Create a new Kilovolt client instance and connect to it
      * @param address Kilovolt server endpoint (including path)
      */
-    constructor(address?: string);
+    constructor(address?: string, password?: string);
     /**
      * Re-connect to kilovolt server
      */
@@ -120,12 +27,13 @@ export default class KilovoltWS extends EventEmitter {
     private open;
     private closed;
     private received;
+    private auth;
     /**
      * Send a request to the server
      * @param msg Request to send
      * @returns Response from server
      */
-    send(msg: KilovoltRequest): Promise<KilovoltMessage>;
+    send<T extends KilovoltRequest>(msg: T | Omit<T, "request_id">): Promise<KilovoltMessage>;
     /**
      * Set a key to a specified value
      * @param key Key to set
@@ -222,4 +130,3 @@ export default class KilovoltWS extends EventEmitter {
      */
     keyList(prefix?: string): Promise<string[]>;
 }
-export {};

@@ -1,97 +1,27 @@
 import { EventEmitter } from "@billjs/event-emitter";
+import { base64ToBytesArr, bytesArrToBase64 } from "./utils";
+import {
+  kvGet,
+  kvGetBulk,
+  kvGetAll,
+  kvSet,
+  kvSetBulk,
+  kvSubscribeKey,
+  kvUnsubscribeKey,
+  kvSubscribePrefix,
+  kvUnsubscribePrefix,
+  kvVersion,
+  kvKeyList,
+  kvLogin,
+  kvError,
+  kvPush,
+  KilovoltResponse,
+  kvGenericResponse,
+  kvAuth,
+  kvEmptyResponse,
+} from "./messages";
 
 export type SubscriptionHandler = (newValue: string, key: string) => void;
-
-interface kvError {
-  ok: false;
-  error: string;
-  request_id: string;
-}
-
-interface kvPush {
-  type: "push";
-  key: string;
-  // eslint-disable-next-line camelcase
-  new_value: string;
-}
-
-interface kvGenericResponse<T> {
-  ok: true;
-  type: "response";
-  request_id: string;
-  data: T;
-}
-
-interface kvEmptyResponse {
-  ok: true;
-  type: "response";
-  request_id: string;
-}
-
-interface kvGet {
-  command: "kget";
-  request_id: string;
-  data: { key: string };
-}
-
-interface kvGetBulk {
-  command: "kget-bulk";
-  request_id: string;
-  data: { keys: string[] };
-}
-
-interface kvGetAll {
-  command: "kget-all";
-  request_id: string;
-  data: { prefix: string };
-}
-
-interface kvSet {
-  command: "kset";
-  request_id: string;
-  data: { key: string; data: string };
-}
-
-interface kvSetBulk {
-  command: "kset-bulk";
-  request_id: string;
-  data: Record<string, string>;
-}
-
-interface kvSubscribeKey {
-  command: "ksub";
-  request_id: string;
-  data: { key: string };
-}
-
-interface kvUnsubscribeKey {
-  command: "kunsub";
-  request_id: string;
-  data: { key: string };
-}
-
-interface kvSubscribePrefix {
-  command: "ksub-prefix";
-  request_id: string;
-  data: { prefix: string };
-}
-
-interface kvUnsubscribePrefix {
-  command: "kunsub-prefix";
-  request_id: string;
-  data: { prefix: string };
-}
-
-interface kvVersion {
-  command: "kversion";
-  request_id: string;
-}
-
-interface kvKeyList {
-  command: "klist";
-  request_id: string;
-  data: { prefix?: string };
-}
 
 export type KilovoltRequest =
   | kvGet
@@ -104,22 +34,59 @@ export type KilovoltRequest =
   | kvSubscribePrefix
   | kvUnsubscribePrefix
   | kvVersion
-  | kvKeyList;
-
-type KilovoltResponse =
-  | kvGenericResponse<string>
-  | kvGenericResponse<Record<string, string>>
-  | kvEmptyResponse;
+  | kvKeyList
+  | kvLogin
+  | kvAuth;
 
 export type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 
+/**
+ * Simple random function for generating request IDs
+ * Note: not cryptographically secure!
+ * @returns Random hex string
+ */
 function generateRid() {
   return Math.random().toString(32);
+}
+
+/**
+ * Calculate and encode the hash for authentication challenges using Web Crypto API
+ * @param password Shared key for authentication
+ * @param challenge Base64 of the received challenge
+ * @param salt Base64 of the received salt
+ * @returns Base64 encoded hash
+ */
+async function authChallenge(
+  password: string,
+  challenge: string,
+  salt: string
+) {
+  // Encode password
+  const enc = new TextEncoder();
+  const keyBytes = enc.encode(password);
+  const saltBytes = base64ToBytesArr(salt);
+  const challengeKey = Uint8Array.from([...keyBytes, ...saltBytes]);
+  const challengeBytes = base64ToBytesArr(challenge);
+
+  const key = await window.crypto.subtle.importKey(
+    "raw",
+    challengeKey,
+    { name: "HMAC", hash: { name: "SHA-256" } },
+    false,
+    ["sign", "verify"]
+  );
+  const signature = await window.crypto.subtle.sign(
+    "HMAC",
+    key,
+    Uint8Array.from(challengeBytes)
+  );
+  return bytesArrToBase64(Array.from(new Uint8Array(signature)));
 }
 
 export default class KilovoltWS extends EventEmitter {
   private socket!: WebSocket;
 
+  private password?: string;
   private address: string;
 
   private pending: Record<string, (response: KilovoltMessage) => void>;
@@ -131,9 +98,10 @@ export default class KilovoltWS extends EventEmitter {
    * Create a new Kilovolt client instance and connect to it
    * @param address Kilovolt server endpoint (including path)
    */
-  constructor(address = "ws://localhost:4337/ws") {
+  constructor(address = "ws://localhost:4337/ws", password?: string) {
     super();
     this.address = address;
+    this.password = password;
     this.pending = {};
     this.keySubscriptions = {};
     this.prefixSubscriptions = {};
@@ -167,8 +135,17 @@ export default class KilovoltWS extends EventEmitter {
     });
   }
 
-  private open() {
+  private async open() {
     console.info("connected to server");
+    // Authenticate if needed
+    if (this.password) {
+      try {
+        await this.auth();
+      } catch (e) {
+        this.fire("error", e);
+        this.socket.close();
+      }
+    }
     this.fire("open");
     this.fire("stateChange", this.socket.readyState);
   }
@@ -222,16 +199,45 @@ export default class KilovoltWS extends EventEmitter {
     });
   }
 
+  private async auth() {
+    // Ask for challenge
+    const request = (await this.send<kvLogin>({ command: "klogin" })) as
+      | kvError
+      | kvGenericResponse<{ challenge: string; salt: string }>;
+    if ("error" in request) {
+      throw new Error(request.error);
+    }
+    // Calculate hash and send back
+    const hash = await authChallenge(
+      this.password ?? "",
+      request.data.challenge,
+      request.data.salt
+    );
+    const response = (await this.send<kvAuth>({
+      command: "kauth",
+      data: { hash },
+    })) as kvError | kvEmptyResponse;
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
+  }
+
   /**
    * Send a request to the server
    * @param msg Request to send
    * @returns Response from server
    */
-  async send(msg: KilovoltRequest): Promise<KilovoltMessage> {
+  async send<T extends KilovoltRequest>(
+    msg: T | Omit<T, "request_id">
+  ): Promise<KilovoltMessage> {
+    const message = {
+      ...msg,
+      request_id: "request_id" in msg ? msg.request_id : generateRid(),
+    };
     return new Promise((resolve) => {
-      const payload = JSON.stringify(msg);
+      const payload = JSON.stringify(message);
       this.socket.send(payload);
-      this.pending[msg.request_id] = resolve;
+      this.pending[message.request_id] = resolve;
     });
   }
 
@@ -242,9 +248,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async putKey(key: string, data: string): Promise<KilovoltMessage> {
-    return this.send({
+    return this.send<kvSet>({
       command: "kset",
-      request_id: generateRid(),
       data: {
         key,
         data,
@@ -258,9 +263,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async putKeys(data: Record<string, string>): Promise<KilovoltMessage> {
-    return this.send({
+    return this.send<kvSetBulk>({
       command: "kset-bulk",
-      request_id: generateRid(),
       data,
     });
   }
@@ -272,9 +276,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async putJSON<T>(key: string, data: T): Promise<KilovoltMessage> {
-    return this.send({
+    return this.send<kvSet>({
       command: "kset",
-      request_id: generateRid(),
       data: {
         key,
         data: JSON.stringify(data),
@@ -292,9 +295,8 @@ export default class KilovoltWS extends EventEmitter {
     Object.entries(data).forEach(([k, v]) => {
       jsonData[k] = JSON.stringify(v);
     });
-    return this.send({
+    return this.send<kvSetBulk>({
       command: "kset-bulk",
-      request_id: generateRid(),
       data: jsonData,
     });
   }
@@ -305,9 +307,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async getKey(key: string): Promise<string> {
-    const response = (await this.send({
+    const response = (await this.send<kvGet>({
       command: "kget",
-      request_id: generateRid(),
       data: {
         key,
       },
@@ -324,9 +325,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async getKeys(keys: string[]): Promise<Record<string, string>> {
-    const response = (await this.send({
+    const response = (await this.send<kvGetBulk>({
       command: "kget-bulk",
-      request_id: generateRid(),
       data: {
         keys,
       },
@@ -343,9 +343,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async getKeysByPrefix(prefix: string): Promise<Record<string, string>> {
-    const response = (await this.send({
+    const response = (await this.send<kvGetAll>({
       command: "kget-all",
-      request_id: generateRid(),
       data: {
         prefix,
       },
@@ -363,9 +362,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async getJSON<T>(key: string): Promise<T> {
-    const response = (await this.send({
+    const response = (await this.send<kvGet>({
       command: "kget",
-      request_id: generateRid(),
       data: {
         key,
       },
@@ -383,9 +381,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns Reply from server
    */
   async getJSONs<T>(keys: string[]): Promise<T> {
-    const response = (await this.send({
+    const response = (await this.send<kvGetBulk>({
       command: "kget-bulk",
-      request_id: generateRid(),
       data: {
         keys,
       },
@@ -416,9 +413,8 @@ export default class KilovoltWS extends EventEmitter {
       this.keySubscriptions[key] = [fn];
     }
 
-    return this.send({
+    return this.send<kvSubscribeKey>({
       command: "ksub",
-      request_id: generateRid(),
       data: {
         key,
       },
@@ -457,9 +453,8 @@ export default class KilovoltWS extends EventEmitter {
     // Check if array is empty
     if (this.keySubscriptions[key].length < 1) {
       // Send unsubscribe
-      const res = (await this.send({
+      const res = (await this.send<kvUnsubscribeKey>({
         command: "kunsub",
-        request_id: generateRid(),
         data: {
           key,
         },
@@ -489,9 +484,8 @@ export default class KilovoltWS extends EventEmitter {
       this.prefixSubscriptions[prefix] = [fn];
     }
 
-    return this.send({
+    return this.send<kvSubscribePrefix>({
       command: "ksub-prefix",
-      request_id: generateRid(),
       data: {
         prefix,
       },
@@ -535,9 +529,8 @@ export default class KilovoltWS extends EventEmitter {
     // Check if array is empty
     if (this.prefixSubscriptions[prefix].length < 1) {
       // Send unsubscribe
-      const res = (await this.send({
+      const res = (await this.send<kvUnsubscribePrefix>({
         command: "kunsub-prefix",
-        request_id: generateRid(),
         data: {
           prefix,
         },
@@ -558,9 +551,8 @@ export default class KilovoltWS extends EventEmitter {
    * @returns List of keys
    */
   async keyList(prefix?: string): Promise<string[]> {
-    const response = (await this.send({
+    const response = (await this.send<kvKeyList>({
       command: "klist",
-      request_id: generateRid(),
       data: {
         prefix: prefix ?? "",
       },

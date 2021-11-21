@@ -164,7 +164,7 @@ export default class KilovoltWS extends EventEmitter {
     events.forEach((ev) => {
       const response: KilovoltMessage = JSON.parse(ev ?? '""');
       if ("error" in response) {
-        this.fire("error", response.error);
+        this.fire("error", response);
         return;
       }
       switch (response.type) {

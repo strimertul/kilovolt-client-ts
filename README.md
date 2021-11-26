@@ -18,6 +18,7 @@ For production uses you should use a fixed tag, like this:
 import Kilovolt from "https://cdn.jsdelivr.net/gh/strimertul/kilovolt-client-ts@6.3.2/dist/kilovolt.js"
 ```
 
+This version is recommended if you are building OBS overlays as it's built with compatibility for Chrome 75 (the version that's used by OBS web view)
 
 ### NPM package
 If you are using a bundler such as Webpack, Parcel or [Vite](https://vitejs.dev/), you can include this client in your project by downloading and importing [@strimertul/kilovolt-client](https://www.npmjs.com/package/@strimertul/kilovolt-client) like this:

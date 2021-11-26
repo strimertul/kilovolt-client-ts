@@ -6,7 +6,7 @@ API docs coming soon(tm)
 
 ## Getting started
 
-`kilovolt-client` only works in platforms with a WebSocket client, such as the browser and [Deno](https://deno.land/). Node.js currently does not work.
+This client only works in platforms with a WebSocket client, such as the browser and [Deno](https://deno.land/). Node.js currently does not work.
 
 ### CDN - ES6 Module
 

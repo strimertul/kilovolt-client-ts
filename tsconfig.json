@@ -17,5 +17,5 @@
     "outDir": "./lib",
     "lib": ["ES2017", "dom"]
   },
-  "include": ["./src"]
+  "include": ["index.ts"]
 }

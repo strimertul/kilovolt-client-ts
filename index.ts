@@ -1,5 +1,5 @@
-import { EventEmitter } from "@billjs/event-emitter";
-import { base64ToBytesArr, bytesArrToBase64 } from "./utils";
+import { EventEmitter } from "./vendor/event-emitter.ts";
+import { base64ToBytesArr, bytesArrToBase64 } from "./utils.ts";
 import {
   kvGet,
   kvGetBulk,
@@ -19,7 +19,7 @@ import {
   kvGenericResponse,
   kvAuth,
   kvEmptyResponse,
-} from "./messages";
+} from "./messages.ts";
 
 export type SubscriptionHandler = (newValue: string, key: string) => void;
 
@@ -83,7 +83,7 @@ async function authChallenge(
   return bytesArrToBase64(Array.from(new Uint8Array(signature)));
 }
 
-export default class KilovoltWS extends EventEmitter {
+export class Kilovolt extends EventEmitter {
   private socket!: WebSocket;
 
   private password?: string;
@@ -564,3 +564,5 @@ export default class KilovoltWS extends EventEmitter {
     return response.data;
   }
 }
+
+export default Kilovolt;

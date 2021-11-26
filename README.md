@@ -1,4 +1,4 @@
-# kilovolt-client
+# Kilovolt client
 
 Typescript client for Kilovolt servers, supports Kilovolt Protocol v4+
 

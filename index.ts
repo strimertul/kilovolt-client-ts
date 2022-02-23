@@ -83,11 +83,16 @@ async function authChallenge(
   return bytesArrToBase64(Array.from(new Uint8Array(signature)));
 }
 
+interface ClientOptions {
+  reconnect?: boolean;
+}
+
 export class Kilovolt extends EventEmitter {
   private socket!: WebSocket;
 
   private password?: string;
   private address: string;
+  private options: ClientOptions;
 
   private pending: Record<string, (response: KilovoltMessage) => void>;
 
@@ -98,13 +103,18 @@ export class Kilovolt extends EventEmitter {
    * Create a new Kilovolt client instance and connect to it
    * @param address Kilovolt server endpoint (including path)
    */
-  constructor(address = "ws://localhost:4337/ws", password?: string) {
+  constructor(
+    address = "ws://localhost:4337/ws",
+    password?: string,
+    options?: ClientOptions
+  ) {
     super();
     this.address = address;
     this.password = password;
     this.pending = {};
     this.keySubscriptions = {};
     this.prefixSubscriptions = {};
+    this.options = options || {};
     this.connect(address);
   }
 
@@ -115,11 +125,20 @@ export class Kilovolt extends EventEmitter {
     this.connect(this.address);
   }
 
+  /**
+   * Close connection to server
+   */
+  close(): void {
+    this.options.reconnect = false;
+    this.socket.close();
+  }
+
   private connect(address: string): void {
     this.socket = new WebSocket(address);
     this.socket.addEventListener("open", this.open.bind(this));
     this.socket.addEventListener("message", this.received.bind(this));
     this.socket.addEventListener("close", this.closed.bind(this));
+    this.socket.addEventListener("error", this.errored.bind(this));
   }
 
   /**
@@ -143,9 +162,10 @@ export class Kilovolt extends EventEmitter {
         await this.auth();
       } catch (e) {
         this.fire("error", e);
-        this.socket.close();
+        this.close();
       }
     }
+    this.resubscribe();
     this.fire("open");
     this.fire("stateChange", this.socket.readyState);
   }
@@ -154,6 +174,14 @@ export class Kilovolt extends EventEmitter {
     console.warn("lost connection to server");
     this.fire("close");
     this.fire("stateChange", this.socket.readyState);
+    // Try reconnecting after a few seconds
+    if (this.options.reconnect) {
+      setTimeout(() => this.reconnect(), 5000);
+    }
+  }
+
+  private errored(ev: Event) {
+    this.fire("error", ev);
   }
 
   private received(event: MessageEvent) {
@@ -165,6 +193,10 @@ export class Kilovolt extends EventEmitter {
       const response: KilovoltMessage = JSON.parse(ev ?? '""');
       if ("error" in response) {
         this.fire("error", response);
+        if ("request_id" in response && response.request_id in this.pending) {
+          this.pending[response.request_id](response);
+          delete this.pending[response.request_id];
+        }
         return;
       }
       switch (response.type) {
@@ -204,6 +236,7 @@ export class Kilovolt extends EventEmitter {
       | kvError
       | kvGenericResponse<{ challenge: string; salt: string }>;
     if ("error" in request) {
+      console.error("kilovolt auth error:", request.error);
       throw new Error(request.error);
     }
     // Calculate hash and send back
@@ -217,7 +250,27 @@ export class Kilovolt extends EventEmitter {
       data: { hash },
     })) as kvError | kvEmptyResponse;
     if ("error" in response) {
+      console.error("kilovolt auth error:", response.error);
       throw new Error(response.error);
+    }
+  }
+
+  private async resubscribe() {
+    for (const key in this.keySubscriptions) {
+      await this.send<kvSubscribeKey>({
+        command: "ksub",
+        data: {
+          key,
+        },
+      });
+    }
+    for (const prefix in this.prefixSubscriptions) {
+      this.send<kvSubscribePrefix>({
+        command: "ksub-prefix",
+        data: {
+          prefix,
+        },
+      });
     }
   }
 
@@ -229,6 +282,9 @@ export class Kilovolt extends EventEmitter {
   async send<T extends KilovoltRequest>(
     msg: T | Omit<T, "request_id">
   ): Promise<KilovoltMessage> {
+    if (this.socket.readyState !== this.socket.OPEN) {
+      throw new Error("Not connected to server");
+    }
     const message = {
       ...msg,
       request_id: "request_id" in msg ? msg.request_id : generateRid(),

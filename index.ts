@@ -19,6 +19,7 @@ import {
   kvGenericResponse,
   kvAuth,
   kvEmptyResponse,
+kvInternalClientID,
 } from "./messages.ts";
 
 export type SubscriptionHandler = (newValue: string, key: string) => void;
@@ -36,7 +37,8 @@ export type KilovoltRequest =
   | kvVersion
   | kvKeyList
   | kvLogin
-  | kvAuth;
+  | kvAuth
+  | kvInternalClientID;
 
 export type KilovoltMessage = kvError | kvPush | KilovoltResponse;
 
@@ -144,7 +146,7 @@ export class Kilovolt extends EventEmitter {
   /**
    * Wait for websocket connection to be established
    */
-  async wait(): Promise<void> {
+  wait(): Promise<void> {
     return new Promise((resolve) => {
       if (this.socket.readyState === this.socket.OPEN) {
         resolve();
@@ -279,7 +281,7 @@ export class Kilovolt extends EventEmitter {
    * @param msg Request to send
    * @returns Response from server
    */
-  async send<T extends KilovoltRequest>(
+  send<T extends KilovoltRequest>(
     msg: T | Omit<T, "request_id">
   ): Promise<KilovoltMessage> {
     if (this.socket.readyState !== this.socket.OPEN) {
@@ -302,7 +304,7 @@ export class Kilovolt extends EventEmitter {
    * @param data Value to set
    * @returns Reply from server
    */
-  async putKey(key: string, data: string): Promise<KilovoltMessage> {
+  putKey(key: string, data: string): Promise<KilovoltMessage> {
     return this.send<kvSet>({
       command: "kset",
       data: {
@@ -317,7 +319,7 @@ export class Kilovolt extends EventEmitter {
    * @param data Map of key:value data to set
    * @returns Reply from server
    */
-  async putKeys(data: Record<string, string>): Promise<KilovoltMessage> {
+  putKeys(data: Record<string, string>): Promise<KilovoltMessage> {
     return this.send<kvSetBulk>({
       command: "kset-bulk",
       data,
@@ -330,7 +332,7 @@ export class Kilovolt extends EventEmitter {
    * @param data Object to save
    * @returns Reply from server
    */
-  async putJSON<T>(key: string, data: T): Promise<KilovoltMessage> {
+  putJSON<T>(key: string, data: T): Promise<KilovoltMessage> {
     return this.send<kvSet>({
       command: "kset",
       data: {
@@ -345,7 +347,7 @@ export class Kilovolt extends EventEmitter {
    * @param data Map of key:value data to set
    * @returns Reply from server
    */
-  async putJSONs(data: Record<string, unknown>): Promise<KilovoltMessage> {
+  putJSONs(data: Record<string, unknown>): Promise<KilovoltMessage> {
     const jsonData: Record<string, string> = {};
     Object.entries(data).forEach(([k, v]) => {
       jsonData[k] = JSON.stringify(v);
@@ -458,7 +460,7 @@ export class Kilovolt extends EventEmitter {
    * @param fn Callback to call when key changes
    * @returns Reply from server
    */
-  async subscribeKey(
+  subscribeKey(
     key: string,
     fn: SubscriptionHandler
   ): Promise<KilovoltMessage> {
@@ -529,7 +531,7 @@ export class Kilovolt extends EventEmitter {
    * @param fn Callback to call when key changes
    * @returns Reply from server
    */
-  async subscribePrefix(
+  subscribePrefix(
     prefix: string,
     fn: SubscriptionHandler
   ): Promise<KilovoltMessage> {

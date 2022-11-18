@@ -79,7 +79,12 @@ export interface kvUnsubscribePrefix {
 }
 
 export interface kvVersion {
-  command: "kversion";
+  command: "version";
+  request_id: string;
+}
+
+export interface kvInternalClientID {
+  command: "_uid";
   request_id: string;
 }
 

@@ -1,9 +1,13 @@
-import { build } from "https://deno.land/x/dnt@0.20.1/mod.ts";
+import { build } from "https://deno.land/x/dnt@0.33.0/mod.ts";
 
 await build({
   entryPoints: ["./index.ts"],
   outDir: "./npm",
   shims: {},
+  esModule: true,
+  compilerOptions: {
+    lib: ["es2017", "dom"],
+  },
   package: {
     name: "@strimertul/kilovolt-client",
     version: Deno.args[0],

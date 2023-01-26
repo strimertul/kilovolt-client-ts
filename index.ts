@@ -1,5 +1,4 @@
-import { EventEmitter } from "./vendor/event-emitter.ts";
-import { base64ToBytesArr, bytesArrToBase64 } from "./utils.ts";
+import { base64ToBytesArr, bytesArrToBase64, EventEmitter } from "./utils.ts";
 import {
   kvGet,
   kvGetBulk,
@@ -19,7 +18,7 @@ import {
   kvGenericResponse,
   kvAuth,
   kvEmptyResponse,
-kvInternalClientID,
+  kvInternalClientID,
 } from "./messages.ts";
 
 export type SubscriptionHandler = (newValue: string, key: string) => void;
@@ -460,10 +459,7 @@ export class Kilovolt extends EventEmitter {
    * @param fn Callback to call when key changes
    * @returns Reply from server
    */
-  subscribeKey(
-    key: string,
-    fn: SubscriptionHandler
-  ): Promise<KilovoltMessage> {
+  subscribeKey(key: string, fn: SubscriptionHandler): Promise<KilovoltMessage> {
     if (key in this.keySubscriptions) {
       this.keySubscriptions[key].push(fn);
     } else {

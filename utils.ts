@@ -1,16 +1,17 @@
+const b64alphabet =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const b64array = [...b64alphabet];
+
 // https://stackoverflow.com/a/62364519
 export function base64ToBytesArr(str: string) {
-  const abc = [
-    ..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
-  ]; // base64 alphabet
   const result = [];
 
   for (let i = 0; i < str.length / 4; i++) {
-    let chunk = [...str.slice(4 * i, 4 * i + 4)];
-    let bin = chunk
-      .map((x) => abc.indexOf(x).toString(2).padStart(6, "0"))
+    const chunk = [...str.slice(4 * i, 4 * i + 4)];
+    const bin = chunk
+      .map((x) => b64array.indexOf(x).toString(2).padStart(6, "0"))
       .join("");
-    let bytes = bin.match(/.{1,8}/g)!.map((x) => +("0b" + x));
+    const bytes = bin.match(/.{1,8}/g)!.map((x) => +("0b" + x));
     result.push(
       ...bytes.slice(
         0,
@@ -22,8 +23,6 @@ export function base64ToBytesArr(str: string) {
 }
 
 export function bytesArrToBase64(arr: number[]) {
-  const abc =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; // base64 alphabet
   const bin = (n: number) => n.toString(2).padStart(8, "0"); // convert num to 8-bit binary string
   const l = arr.length;
   let result = "";
@@ -38,7 +37,7 @@ export function bytesArrToBase64(arr: number[]) {
     const r = chunk
       .match(/.{1,6}/g)!
       .map((x, j) =>
-        j == 3 && c2 ? "=" : j == 2 && c1 ? "=" : abc[+("0b" + x)]
+        j == 3 && c2 ? "=" : j == 2 && c1 ? "=" : b64alphabet[+("0b" + x)]
       );
     result += r.join("");
   }

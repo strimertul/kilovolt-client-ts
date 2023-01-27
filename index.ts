@@ -171,9 +171,9 @@ export class Kilovolt extends EventEmitter {
     this.fire("stateChange", this.socket.readyState);
   }
 
-  private closed() {
-    console.warn("lost connection to server");
-    this.fire("close");
+  private closed(ev: CloseEvent) {
+    console.warn(`lost connection to server: ${ev.reason}`);
+    this.fire("close", ev);
     this.fire("stateChange", this.socket.readyState);
     // Try reconnecting after a few seconds
     if (this.options.reconnect) {

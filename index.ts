@@ -69,14 +69,14 @@ async function authChallenge(
   const challengeKey = Uint8Array.from([...keyBytes, ...saltBytes]);
   const challengeBytes = base64ToBytesArr(challenge);
 
-  const key = await window.crypto.subtle.importKey(
+  const key = await crypto.subtle.importKey(
     "raw",
     challengeKey,
     { name: "HMAC", hash: { name: "SHA-256" } },
     false,
     ["sign", "verify"]
   );
-  const signature = await window.crypto.subtle.sign(
+  const signature = await crypto.subtle.sign(
     "HMAC",
     key,
     Uint8Array.from(challengeBytes)

@@ -19,6 +19,7 @@ import {
   kvAuth,
   kvEmptyResponse,
   kvInternalClientID,
+  kvDelete,
 } from "./messages.ts";
 
 export type SubscriptionHandler = (newValue: string, key: string) => void;
@@ -35,6 +36,7 @@ export type KilovoltRequest =
   | kvUnsubscribePrefix
   | kvVersion
   | kvKeyList
+  | kvDelete
   | kvLogin
   | kvAuth
   | kvInternalClientID;
@@ -615,6 +617,24 @@ export class Kilovolt extends EventEmitter {
       throw new Error(response.error);
     }
 
+    return response.data;
+  }
+
+  /**
+   * Delete key from store
+   * @param key Key to delete
+   * @returns Reply from server
+   */
+  async deleteKey(key: string): Promise<string> {
+    const response = (await this.send<kvDelete>({
+      command: "kdel",
+      data: {
+        key,
+      },
+    })) as kvError | kvGenericResponse<string>;
+    if ("error" in response) {
+      throw new Error(response.error);
+    }
     return response.data;
   }
 }

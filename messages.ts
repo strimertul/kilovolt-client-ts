@@ -107,6 +107,12 @@ export interface kvAuth {
   };
 }
 
+export interface kvDelete {
+  command: "kdel";
+  request_id: string;
+  data: { key: string };
+}
+
 export type KilovoltResponse =
   | kvGenericResponse<string>
   | kvGenericResponse<Record<string, string>>

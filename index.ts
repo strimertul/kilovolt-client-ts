@@ -112,7 +112,7 @@ export class Kilovolt extends EventEmitter {
   private prefixSubscriptions: Record<string, SubscriptionHandler[]>;
 
   /**
-   * Create a new Kilovolt client instance and connect to it
+   * Create a new Kilovolt client instance
    * @param address Kilovolt server endpoint (including path)
    */
   constructor(address = "ws://localhost:4337/ws", options?: ClientOptions) {

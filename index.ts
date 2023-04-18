@@ -86,7 +86,7 @@ async function authChallenge(
   return bytesArrToBase64(Array.from(new Uint8Array(signature)));
 }
 
-interface ClientOptions {
+export interface ClientOptions {
   /* If true, reconnect to the server if the connection gets terminated for any reason */
   reconnect?: boolean;
 

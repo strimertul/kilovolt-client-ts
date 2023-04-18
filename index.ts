@@ -87,13 +87,22 @@ async function authChallenge(
 }
 
 interface ClientOptions {
+  /* If true, reconnect to the server if the connection gets terminated for any reason */
   reconnect?: boolean;
+
+  /* If provided, authenticate non-interactively as soon as connection is established */
+  password?: string;
+
+  /* If true, authenticate interactively as soon as connection is established */
+  interactive?: boolean;
+
+  /* When authenticating interactively, this data is added to the auth message */
+  interactiveData?: Record<string, unknown>;
 }
 
 export class Kilovolt extends EventEmitter {
   private socket!: WebSocket;
 
-  private password?: string;
   private address: string;
   private options: ClientOptions;
 
@@ -106,26 +115,22 @@ export class Kilovolt extends EventEmitter {
    * Create a new Kilovolt client instance and connect to it
    * @param address Kilovolt server endpoint (including path)
    */
-  constructor(
-    address = "ws://localhost:4337/ws",
-    password?: string,
-    options?: ClientOptions
-  ) {
+  constructor(address = "ws://localhost:4337/ws", options?: ClientOptions) {
     super();
     this.address = address;
-    this.password = password;
     this.pending = {};
     this.keySubscriptions = {};
     this.prefixSubscriptions = {};
-    this.options = options || {};
-    this.connect(address);
+    this.options = options || {
+      reconnect: true,
+    };
   }
 
   /**
    * Re-connect to kilovolt server
    */
   reconnect(): void {
-    this.connect(this.address);
+    this.connect();
   }
 
   /**
@@ -136,18 +141,22 @@ export class Kilovolt extends EventEmitter {
     this.socket.close();
   }
 
-  private connect(address: string): void {
-    this.socket = new WebSocket(address);
+  /**
+   * Connect to the Kilovolt server
+   */
+  async connect() {
+    this.socket = new WebSocket(this.address);
     this.socket.addEventListener("open", this.open.bind(this));
     this.socket.addEventListener("message", this.received.bind(this));
     this.socket.addEventListener("close", this.closed.bind(this));
     this.socket.addEventListener("error", this.errored.bind(this));
+    await this.wait();
   }
 
   /**
    * Wait for websocket connection to be established
    */
-  wait(): Promise<void> {
+  private wait(): Promise<void> {
     return new Promise((resolve) => {
       if (this.socket.readyState === this.socket.OPEN) {
         resolve();
@@ -160,9 +169,16 @@ export class Kilovolt extends EventEmitter {
   private async open() {
     console.info("connected to server");
     // Authenticate if needed
-    if (this.password) {
+    if (this.options.password) {
       try {
-        await this.auth();
+        await this.authWithPassword(this.options.password);
+      } catch (e) {
+        this.fire("error", e);
+        this.close();
+      }
+    } else if (this.options.interactive) {
+      try {
+        await this.authInteractive(this.options.interactiveData ?? {});
       } catch (e) {
         this.fire("error", e);
         this.close();
@@ -233,18 +249,19 @@ export class Kilovolt extends EventEmitter {
     });
   }
 
-  private async auth() {
+  private async authWithPassword(password: string) {
     // Ask for challenge
-    const request = (await this.send<kvLogin>({ command: "klogin" })) as
-      | kvError
-      | kvGenericResponse<{ challenge: string; salt: string }>;
+    const request = (await this.send<kvLogin>({
+      command: "klogin",
+      data: { auth: "challenge" },
+    })) as kvError | kvGenericResponse<{ challenge: string; salt: string }>;
     if ("error" in request) {
       console.error("kilovolt auth error:", request.error);
       throw new Error(request.error);
     }
     // Calculate hash and send back
     const hash = await authChallenge(
-      this.password ?? "",
+      password ?? "",
       request.data.challenge,
       request.data.salt
     );
@@ -255,6 +272,18 @@ export class Kilovolt extends EventEmitter {
     if ("error" in response) {
       console.error("kilovolt auth error:", response.error);
       throw new Error(response.error);
+    }
+  }
+
+  private async authInteractive(data: Record<string, unknown>) {
+    // Ask for interactive auth
+    const request = (await this.send<kvLogin>({
+      command: "klogin",
+      data: { ...data, auth: "ask" },
+    })) as kvError | kvGenericResponse<{ challenge: string; salt: string }>;
+    if ("error" in request) {
+      console.error("kilovolt auth error:", request.error);
+      throw new Error(request.error);
     }
   }
 

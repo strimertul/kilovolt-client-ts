@@ -1,4 +1,4 @@
-import * as esbuild from "https://deno.land/x/esbuild@v0.17.4/mod.js";
+import * as esbuild from "https://deno.land/x/esbuild@v0.17.17/mod.js";
 await esbuild.build({
   bundle: true,
   minify: true,

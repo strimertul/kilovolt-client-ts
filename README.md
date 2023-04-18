@@ -15,7 +15,7 @@ A compiled version is available on this repo at `dist/kilovolt.js` and through j
 For production uses you should use a fixed tag, like this:
 
 ```ts
-import Kilovolt from "https://cdn.jsdelivr.net/gh/strimertul/kilovolt-client-ts@6.3.2/dist/kilovolt.js"
+import Kilovolt from "https://cdn.jsdelivr.net/gh/strimertul/kilovolt-client-ts@8.0.0/dist/kilovolt.js"
 ```
 
 This version is recommended if you are building OBS overlays as it's built with compatibility for Chrome 75 (the version that's used by OBS web view)
@@ -34,7 +34,7 @@ This package is available as a Deno module through Deno's own hosting service as
 To use it, simply import it like this:
 
 ```ts
-import { Kilovolt } from "https://deno.land/x/kilovolt@v6.3.2/mod.ts"
+import { Kilovolt } from "https://deno.land/x/kilovolt@v8.0.0/mod.ts"
 ```
 
 ## LICENSE

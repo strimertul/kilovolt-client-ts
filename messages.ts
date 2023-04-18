@@ -97,6 +97,9 @@ export interface kvKeyList {
 export interface kvLogin {
   command: "klogin";
   request_id: string;
+  data: {
+    auth: "challenge" | "ask";
+  };
 }
 
 export interface kvAuth {

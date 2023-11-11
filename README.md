@@ -1,3 +1,5 @@
+# MOVED TO <https://git.sr.ht/~ashkeel/kilovolt-client-ts>
+
 # Kilovolt client
 
 Typescript client for Kilovolt servers, supports Kilovolt Protocol v4+

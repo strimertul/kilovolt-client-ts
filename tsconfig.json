@@ -15,7 +15,8 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./lib",
-    "lib": ["ES2017", "dom"]
+    "lib": ["ES2017", "dom"],
+    "allowImportingTsExtensions": true
   },
   "include": ["index.ts"]
 }

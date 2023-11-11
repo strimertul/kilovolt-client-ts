@@ -17,12 +17,12 @@ await build({
     license: "ISC",
     repository: {
       type: "git",
-      url: "git+https://github.com/strimertul/kilovolt-client-ts.git",
+      url: "git+https://git.sr.ht/~ashkeel/kilovolt-client-ts",
     },
     bugs: {
-      url: "https://github.com/strimertul/kilovolt-client-ts/issues",
+      url: "https://lists.sr.ht/~ashkeel/strimertul-devel",
     },
-    homepage: "https://github.com/strimertul/kilovolt-client-ts#readme",
+    homepage: "https://git.sr.ht/~ashkeel/kilovolt-client-ts",
   },
 });
 
